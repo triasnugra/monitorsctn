@@ -1,0 +1,87 @@
+name: monitor-sctn
+
+on:
+  schedule:
+    - cron: "20,50 * * * *"     # tiap 30 menit; mesin berjalan di menit ke-5 jadi data sudah segar
+  push:
+    branches: [main, master]
+    paths:
+      - "index.html"
+      - "scripts/**"
+      - "config/**"
+      - ".github/workflows/monitor.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: monitor-sctn
+  cancel-in-progress: false
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Kumpulkan data mesin & hitung metrik
+        env:
+          # Repo mesin publik -> cukup GITHUB_TOKEN. Bila repo mesin PRIVAT, buat secret ENGINES_TOKEN (PAT read-only: Contents + Actions).
+          GH_TOKEN: ${{ secrets.ENGINES_TOKEN || secrets.GITHUB_TOKEN }}
+        run: python scripts/collect.py --site site
+
+      - name: Ringkasan di tab Summary
+        if: always()
+        run: |
+          python - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import json
+          d = json.load(open("data/monitor.json"))
+          print("| Mesin | Status | Trade | Win% | Avg R | PF | Total R | Stale |\n|---|---|---|---|---|---|---|---|")
+          for e in d["engines"]:
+              s = (e.get("forward") or {}).get("stats", {})
+              f = lambda v, p=2: "-" if v is None else f"{v:.{p}f}"
+              print(f"| {e['name']} | {e.get('verdict', {}).get('code', '?')} | {s.get('n', 0)} | {f((s.get('win_rate') or 0) * 100, 1) if s.get('n') else '-'} | {f(s.get('avg_r'))} | {f(s.get('profit_factor'))} | {f(s.get('total_r'))} | {e.get('stale')} |")
+          PY
+
+      - name: Upload artifact Pages
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: site
+
+      - name: Commit state (monitor.json & history.json)
+        run: |
+          git config user.name "sctn-monitor-bot"
+          git config user.email "sctn-monitor-bot@users.noreply.github.com"
+          git add data/monitor.json data/history.json
+          git diff --cached --quiet && echo "Tidak ada perubahan" && exit 0
+          git commit -m "chore: monitor snapshot $(date -u +'%Y-%m-%d %H:%M') UTC"
+          for i in 1 2 3; do
+            git pull --rebase --autostash origin "${GITHUB_REF_NAME}" || true
+            git push origin "HEAD:${GITHUB_REF_NAME}" && exit 0
+            echo "Push gagal (percobaan $i), ulangi..."; sleep 5
+          done
+          echo "::warning::Push state gagal setelah 3 percobaan"
+
+  deploy:
+    needs: collect
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    concurrency:
+      group: pages
+      cancel-in-progress: false
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v5
