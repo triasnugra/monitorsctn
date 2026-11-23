@@ -1,0 +1,1 @@
+# Collector hanya memakai standard library Python 3.11+ (tanpa dependensi).

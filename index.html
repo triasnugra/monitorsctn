@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Monitor SCTN · SCTNv2 · SCTNv3</title>
+<style>
+:root{--bg:#f6f7f9;--card:#fff;--tx:#14171c;--mu:#667085;--bd:#e3e6eb;--pos:#0e9f6e;--neg:#e02f44;--warn:#b7791f;--acc:#2563eb}
+@media(prefers-color-scheme:dark){:root:not([data-theme=light]){--bg:#0e1116;--card:#171b22;--tx:#e8ebf0;--mu:#8b95a5;--bd:#262c36;--pos:#34d399;--neg:#f87171;--warn:#fbbf24;--acc:#60a5fa}}
+:root[data-theme=dark]{--bg:#0e1116;--card:#171b22;--tx:#e8ebf0;--mu:#8b95a5;--bd:#262c36;--pos:#34d399;--neg:#f87171;--warn:#fbbf24;--acc:#60a5fa}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--tx);font:14px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+main{max-width:1180px;margin:0 auto;padding:16px}
+h1{font-size:20px;margin:0}h2{font-size:15px;margin:0 0 10px}.mu{color:var(--mu)}.pos{color:var(--pos)}.neg{color:var(--neg)}.warn{color:var(--warn)}
+header{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;margin-bottom:12px}
+button{background:var(--card);color:var(--tx);border:1px solid var(--bd);border-radius:8px;padding:5px 10px;cursor:pointer;font:inherit}
+button.on{border-color:var(--acc);color:var(--acc);font-weight:600}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:14px;margin-bottom:12px}
+.grid{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(320px,1fr))}.grid .card{margin:0}
+.banner{border-left:4px solid var(--warn)}
+.pill{display:inline-block;padding:1px 8px;border-radius:99px;font-size:12px;font-weight:600;border:1px solid var(--bd)}
+.s-PASS{color:var(--pos);border-color:var(--pos)}.s-FAIL{color:var(--neg);border-color:var(--neg)}.s-UNVERIFIABLE,.s-NO_DATA{color:var(--warn);border-color:var(--warn)}
+.kv{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:8px;margin:8px 0}.kv div{background:var(--bg);border-radius:8px;padding:6px 8px}.kv b{display:block;font-size:16px}.kv span{font-size:11px;color:var(--mu)}
+.wrap{overflow-x:auto}table{border-collapse:collapse;width:100%;font-size:13px}th,td{text-align:right;padding:5px 8px;border-bottom:1px solid var(--bd);white-space:nowrap}th{color:var(--mu);font-weight:600;font-size:12px}th:first-child,td:first-child{text-align:left}
+.bar{height:6px;background:var(--bd);border-radius:4px;overflow:hidden}.bar i{display:block;height:100%;background:var(--acc)}
+.tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}.dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:5px}
+svg text{fill:var(--mu);font-size:10px}.leg{display:flex;gap:12px;flex-wrap:wrap;font-size:12px;margin-top:6px}
+ul{margin:6px 0;padding-left:18px}li{margin:2px 0}
+</style>
+</head>
+<body>
+<main>
+<header>
+  <div><h1>Monitor Mesin Scalping · SCTN / SCTNv2 / SCTNv3</h1>
+  <div class="mu" id="meta">Memuat…</div></div>
+  <div><button id="th">Tema</button></div>
+</header>
+<div id="app"></div>
+</main>
+<script>
+const $=s=>document.querySelector(s);
+const esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const f=(v,d=2)=>v==null||isNaN(v)?"–":Number(v).toFixed(d);
+const sg=(v,d=2)=>v==null?"–":(v>0?"+":"")+Number(v).toFixed(d);
+const pc=v=>v==null?"–":(v*100).toFixed(1)+"%";
+const cl=v=>v==null?"":v>0?"pos":v<0?"neg":"";
+const ago=t=>{if(!t)return"–";const m=(Date.now()-new Date(t))/6e4;return m<60?Math.round(m)+" mnt lalu":m<2880?(m/60).toFixed(1)+" jam lalu":Math.round(m/1440)+" hari lalu"};
+const tm=t=>t?String(t).replace("T"," ").slice(0,16):"–";
+let D,H,sel="all",mode="fw";
+const E=()=>D.engines;
+
+function tbl(head,rows){return `<div class="wrap"><table><tr>${head.map(h=>`<th>${h}</th>`).join("")}</tr>${rows.map(r=>`<tr>${r.map(c=>`<td>${c}</td>`).join("")}</tr>`).join("")||`<tr><td colspan="${head.length}" class="mu">Belum ada data</td></tr>`}</table></div>`}
+function grp(g){return tbl(["","n","Win%","Avg R","PF","Total R"],Object.entries(g||{}).map(([k,v])=>[esc(k),v.n,pc(v.win_rate),`<span class="${cl(v.avg_r)}">${sg(v.avg_r)}</span>`,f(v.profit_factor),`<span class="${cl(v.total_r)}">${sg(v.total_r)}</span>`]))}
+
+function chart(series,h=240){
+  const W=900,P={l:40,r:60,t:10,b:20};
+  const all=series.flatMap(s=>s.pts.map(p=>({x:+new Date(p.t),y:p.r}))).filter(p=>!isNaN(p.x));
+  if(!all.length)return`<div class="mu">Belum ada trade tertutup untuk digambar.</div>`;
+  let x0=Math.min(...all.map(p=>p.x)),x1=Math.max(...all.map(p=>p.x),x0+1),y0=Math.min(0,...all.map(p=>p.y)),y1=Math.max(0,...all.map(p=>p.y));
+  if(y1===y0){y1+=1}
+  const X=x=>P.l+(x-x0)/(x1-x0)*(W-P.l-P.r),Y=y=>h-P.b-(y-y0)/(y1-y0)*(h-P.t-P.b);
+  let g="";for(let i=0;i<=4;i++){const v=y0+(y1-y0)*i/4;g+=`<line x1="${P.l}" x2="${W-P.r}" y1="${Y(v)}" y2="${Y(v)}" stroke="var(--bd)"/><text x="4" y="${Y(v)+3}">${v.toFixed(1)}R</text>`}
+  g+=`<line x1="${P.l}" x2="${W-P.r}" y1="${Y(0)}" y2="${Y(0)}" stroke="var(--mu)" stroke-dasharray="4 3"/>`;
+  g+=[x0,x1].map((x,i)=>`<text x="${i?W-P.r:P.l}" y="${h-4}" text-anchor="${i?"end":"start"}">${new Date(x).toISOString().slice(0,10)}</text>`).join("");
+  const lines=series.map(s=>{const pts=s.pts.map(p=>[X(+new Date(p.t)),Y(p.r)]).filter(p=>!isNaN(p[0]));if(!pts.length)return"";const last=pts[pts.length-1];
+    return `<polyline fill="none" stroke="${s.color}" stroke-width="2" points="${pts.map(p=>p.join(",")).join(" ")}"/><text x="${last[0]+4}" y="${last[1]+3}" style="fill:${s.color};font-weight:600">${esc(s.name)} ${sg(s.pts[s.pts.length-1].r,1)}</text>`}).join("");
+  return `<svg viewBox="0 0 ${W} ${h}" width="100%" role="img">${g}${lines}</svg>`}
+
+function gateBar(l,v,t,u=""){const p=Math.min(100,(v||0)/t*100);return `<div style="margin:6px 0"><div style="display:flex;justify-content:space-between"><span>${l}</span><span class="mu">${f(v,u?1:0)}${u} / ${t}${u}</span></div><div class="bar"><i style="width:${p}%"></i></div></div>`}
+function gateRow(e){const g=e.verdict?.gates||{},t=D.gates;const ok=x=>x?`<span class="pos">✔</span>`:`<span class="neg">✘</span>`;
+  return `<ul style="list-style:none;padding:0"><li>${ok(g.trades)} Trade ≥ ${t.min_trades}</li><li>${ok(g.weeks)} Durasi ≥ ${t.min_weeks} minggu</li><li>${ok(g.ci_lower_positive)} Batas bawah CI95 Avg R &gt; 0</li><li>${ok(g.profit_factor)} Profit factor ≥ ${t.min_profit_factor}</li></ul>`}
+
+function engineCard(e){
+  const s=e.forward?.stats||{},v=e.verdict||{code:"NO_DATA",text:e.errors?.[0]||""},h=e.health||{};
+  const warn=[];if(e.stale)warn.push("Data basi / gagal diambil");if(h.stale)warn.push("Mesin tidak update > 3 jam");
+  if(v.early)warn.push(`Indikasi awal ${v.early} (CI95, belum sah)`);
+  return `<div class="card" style="border-top:3px solid ${e.color}"><h2><span class="dot" style="background:${e.color}"></span>${esc(e.name)} <span class="pill s-${v.code}">${v.code}</span></h2>
+  <div class="mu" style="min-height:40px">${esc(v.text)}</div>
+  <div class="kv"><div><b>${s.n||0}</b><span>Trade tertutup</span></div><div><b class="${cl(s.avg_r)}">${sg(s.avg_r)}</b><span>Avg R</span></div><div><b class="${cl(s.total_r)}">${sg(s.total_r,1)}</b><span>Total R</span></div><div><b>${pc(s.win_rate)}</b><span>Win rate</span></div></div>
+  ${gateBar("Trade",s.n,D.gates.min_trades)}${gateBar("Minggu",s.weeks,D.gates.min_weeks,"w")}
+  ${warn.map(w=>`<div class="warn">⚠ ${esc(w)}</div>`).join("")}
+  <div class="mu" style="margin-top:6px">Update ${ago(e.forward?.updated)} · hash ${esc(h.config_hash||"–")}</div></div>`}
+
+function compareTable(){
+  const rows=E().filter(e=>e.forward).map(e=>{const s=e.forward.stats;return [`<span class="dot" style="background:${e.color}"></span>${esc(e.name)}`,s.n||0,pc(s.win_rate),`<span class="${cl(s.avg_r)}">${sg(s.avg_r,3)}</span>`,`<span class="${cl(s.total_r)}">${sg(s.total_r,1)}</span>`,f(s.profit_factor),f(s.sqn),`${sg(s.ci_low,2)} … ${sg(s.ci_high,2)}`,`${sg(s.boot_low,2)} … ${sg(s.boot_high,2)}`,f(s.max_drawdown_r,1),s.max_loss_streak??"–",e.forward.fill_rate!=null?pc(e.forward.fill_rate):"–",f(e.forward.avg_hold_h,1)+" j"]});
+  return tbl(["Mesin","n","Win%","Avg R","Total R","PF","SQN","CI95 (t)","CI95 (bootstrap)","Max DD (R)","Loss streak","Fill rate","Hold rata²"],rows)}
+
+function detail(e){
+  if(!e.forward)return `<div class="card">${esc((e.errors||[]).join(" "))}</div>`;
+  const F=e.forward,s=F.stats,sg_=e.signals,h=e.health,b=e.backtest,bv=e.backtest_vs_forward;
+  const eqs=[{name:"Forward",color:e.color,pts:F.equity}];if(b)eqs.push({name:"Backtest",color:"#9ca3af",pts:b.equity});
+  return `<div class="card"><h2>${esc(e.name)} — ringkasan</h2>
+   <div class="kv"><div><b>${F.counts.CLOSED}</b><span>Closed</span></div><div><b>${F.counts.OPEN}</b><span>Open</span></div><div><b>${F.counts.WAITING}</b><span>Waiting</span></div><div><b>${F.counts.CANCELLED}</b><span>Cancelled</span></div><div><b>${sg_.total}</b><span>Total sinyal</span></div><div><b>${ago(sg_.last_signal)}</b><span>Sinyal terakhir</span></div></div>
+   ${gateRow(e)}<div class="mu">Outcome: ${Object.entries(F.outcomes).map(([k,v])=>`${esc(k)} ${v}`).join(" · ")||"–"}</div></div>
+   <div class="card"><h2>Kurva ekuitas R — forward vs backtest (skala waktu terpisah)</h2>${chart(eqs.slice(0,1))}${b?`<div class="mu" style="margin-top:8px">Backtest ${esc(String(b.period?.[0]||"").slice(0,10))} → ${esc(String(b.period?.[1]||"").slice(0,10))}</div>${chart(eqs.slice(1),160)}`:""}</div>
+   ${bv?`<div class="card"><h2>Backtest vs forward</h2>${tbl(["","Avg R","Profit factor"],[["Backtest",sg(bv.bt_avg_r,3),f(bv.bt_pf)],["Forward",sg(bv.fw_avg_r,3),f(bv.fw_pf)],["Selisih",`<span class="${cl(bv.delta_avg_r)}">${sg(bv.delta_avg_r,3)}</span>`,"–"]])}<div class="mu">Forward jauh di bawah backtest = tanda overfitting. Selisih saat n kecil belum bermakna. ${h.bt_hash_match?"":`<span class="warn">Hash config backtest ≠ hash sinyal terkini (backtest dari versi config lain).</span>`}</div></div>`:""}
+   <div class="grid"><div class="card"><h2>Per trigger</h2>${grp(F.by_trigger)}</div><div class="card"><h2>Per arah</h2>${grp(F.by_direction)}</div><div class="card"><h2>Per skor</h2>${grp(F.by_score)}</div><div class="card"><h2>Per simbol</h2>${grp(F.by_symbol)}</div></div>
+   <div class="card" style="margin-top:12px"><h2>Posisi aktif / menunggu</h2>${tbl(["Waktu","Simbol","Arah","Trigger","Status","Entry","SL","TP1","R"],F.active.map(a=>[tm(a.asof),esc(a.symbol),esc(a.direction),esc(a.trigger),esc(a.status),a.entry,f(a.stop,4),a.tp1,`<span class="${cl(a.r)}">${sg(a.r)}</span>`]))}</div>
+   <div class="card"><h2>40 trade tertutup terakhir</h2>${tbl(["Keluar","Simbol","Arah","Trigger","Skor","Outcome","R"],F.recent.map(t=>[tm(t.exit_time),esc(t.symbol),esc(t.direction),esc(t.trigger),t.score??"–",esc(t.outcome),`<span class="${cl(t.r)}">${sg(t.r)}</span>`]))}</div>
+   <div class="card"><h2>Sinyal terakhir (signal_log)</h2>${tbl(["Waktu","Simbol","Aksi","Status","Skor","Trigger","Entry","SL"],sg_.recent.map(r=>[tm(r.asof_utc),esc(r.symbol),esc(r.action),esc(r.status),esc(r.score),esc(r.trigger),esc(r.entry),f(+r.stop,4)]))}
+   <div class="mu">Status: ${Object.entries(sg_.by_status).map(([k,v])=>`${esc(k)} ${v}`).join(" · ")}</div></div>
+   ${e.universe?`<div class="card"><h2>Universe scanner</h2><div class="mu">${esc(e.universe.source)} · top ${e.universe.top_n} · ${ago(e.universe.fetched_at)} · rules ${esc(e.universe.rules_hash)}</div><div style="margin-top:6px">${(e.universe.symbols||[]).map(x=>`<span class="pill">${esc(x.replace("/USDT",""))}</span>`).join(" ")}</div><div class="warn" style="margin-top:6px">Universe berubah tiap run → hasil forward bercampur banyak koin; backtest tetap memakai daftar tetap 8 koin.</div></div>`:""}
+   <div class="card"><h2>Kesehatan mesin</h2>${tbl(["Item","Nilai"],[["Run workflow terakhir",h.run?`<a href="${esc(h.run.url)}" style="color:var(--acc)">${esc(h.run.conclusion||h.run.status)}</a> · ${ago(h.run.updated)}`:"–"],["Sukses terakhir",ago(h.run?.last_success)],["Umur forward_test.json",f(h.state_age_h,1)+" jam"],["Config hash",esc(h.config_hash||"–")],["Pergantian hash di log",h.config_hash_changes]])}</div>`}
+
+function render(){
+  const ok=E().filter(e=>e.forward),pass=E().filter(e=>e.verdict?.code==="PASS").length;
+  const anyEarly=E().filter(e=>e.verdict?.early==="NEGATIF").map(e=>e.name);
+  let html=`<div class="card banner"><b>${pass?`${pass} mesin lolos gate`:"Belum ada mesin yang terverifikasi"}.</b> <span class="mu">Gate: ${D.gates.min_trades} trade, ${D.gates.min_weeks} minggu, batas bawah CI95 Avg R &gt; 0, PF ≥ ${D.gates.min_profit_factor}. Sebelum semua terpenuhi, angka di bawah hanya deskriptif — bukan bukti edge, dan bukan dasar memakai uang nyata.</span>${anyEarly.length?`<div class="neg">⚠ Indikasi awal negatif: ${anyEarly.map(esc).join(", ")}.</div>`:""}</div>`;
+  html+=`<div class="grid" style="margin-bottom:12px">${E().map(engineCard).join("")}</div>`;
+  html+=`<div class="card"><h2>Perbandingan forward test</h2>${compareTable()}</div>`;
+  html+=`<div class="card"><h2>Kurva ekuitas forward (kumulatif R)</h2>${chart(ok.map(e=>({name:e.name,color:e.color,pts:e.forward.equity})))}<div class="leg">${E().map(e=>`<span><span class="dot" style="background:${e.color}"></span>${esc(e.name)}</span>`).join("")}</div></div>`;
+  html+=`<div class="card"><h2>Independensi mesin (tumpang tindih sinyal)</h2>${tbl(["Pasangan","Sinyal sama","Jaccard","Korelasi R harian","Hari sama"],D.overlap.map(o=>[`${esc(o.a)} ↔ ${esc(o.b)}`,o.shared,pc(o.jaccard),f(o.daily_corr,2),o.common_days]))}<div class="mu">Sinyal sama = simbol+arah+trigger+jam yang sama. Jaccard tinggi berarti mesin hampir identik: hasilnya <b>bukan</b> bukti independen, jangan dijumlahkan sebagai tiga sampel.</div></div>`;
+  html+=`<div class="tabs">${[["all","Semua"],...E().map(e=>[e.id,e.name])].map(([k,l])=>`<button data-k="${k}" class="${sel===k?"on":""}">${esc(l)}</button>`).join("")}</div>`;
+  html+=sel==="all"?E().filter(e=>e.forward).map(e=>`<div class="card"><h2>${esc(e.name)} — per trigger</h2>${grp(e.forward.by_trigger)}</div>`).join(""):detail(E().find(e=>e.id===sel));
+  if(H&&H.length>1){const pts=id=>H.filter(h=>h.e[id]).map(h=>({t:h.t,r:h.e[id].n}));html+=`<div class="card"><h2>Progres jumlah trade tertutup menuju ${D.gates.min_trades}</h2>${chart(E().map(e=>({name:e.name,color:e.color,pts:pts(e.id)})))}</div>`}
+  html+=`<div class="card mu"><b>Metodologi.</b> Semua angka dihitung ulang dari <code>forward_test.json</code> tiap mesin (trade CLOSED, R sudah termasuk biaya). CI95 (t) = mean ± 1,96·SE; bootstrap = 2.000 resample. Simulasi konservatif (stop dulu bila ambigu), bukan eksekusi nyata. Sinyal dalam satu waktu saling berkorelasi (banyak koin searah) sehingga n efektif lebih kecil dari n tercatat.</div>`;
+  $("#app").innerHTML=html;
+  document.querySelectorAll(".tabs button").forEach(b=>b.onclick=()=>{sel=b.dataset.k;render()});
+}
+$("#th").onclick=()=>{const r=document.documentElement,d=r.dataset.theme==="dark"||(!r.dataset.theme&&matchMedia("(prefers-color-scheme:dark)").matches);r.dataset.theme=d?"light":"dark"};
+Promise.all([fetch("data/monitor.json?"+Date.now()).then(r=>r.json()),fetch("data/history.json?"+Date.now()).then(r=>r.json()).catch(()=>[])]).then(([d,h])=>{D=d;H=h;
+  $("#meta").textContent=`Dikumpulkan ${tm(d.generated)} UTC (${ago(d.generated)}) · sumber: github.com/${d.owner}`;render()}).catch(e=>{$("#app").innerHTML=`<div class="card neg">Gagal memuat data/monitor.json: ${esc(e)}</div>`});
+</script>
+</body>
+</html>

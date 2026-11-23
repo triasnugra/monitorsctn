@@ -1,0 +1,12 @@
+{
+  "owner": "triasnugra",
+  "branch": "main",
+  "workflow_file": "run-analysis.yml",
+  "stale_after_hours": 3,
+  "gates": { "min_trades": 150, "min_weeks": 20, "min_profit_factor": 1.2 },
+  "engines": [
+    { "id": "sctn",   "name": "SCTN",   "repo": "sctn",   "color": "#4f9dff" },
+    { "id": "sctnv2", "name": "SCTNv2", "repo": "sctnv2", "color": "#f5a524" },
+    { "id": "sctnv3", "name": "SCTNv3", "repo": "sctnv3", "color": "#34d399" }
+  ]
+}
